@@ -39,8 +39,10 @@ class Block {
     return new Promise((resolve, reject) => {
       // Save in auxiliary variable the current block hash
       const stateWhenHashed = { ...self, hash: null };
+
       // Recalculate the hash of the Block
       const validateHash = SHA256(JSON.stringify(stateWhenHashed)).toString();
+
       // Comparing if the hashes changed
       if (validateHash === self.hash) {
         // Returning the Block is valid

@@ -63,13 +63,17 @@ class Blockchain {
   _addBlock(block) {
     let self = this;
     return new Promise(async (resolve, reject) => {
-      if (self.chain.length - self.height !== 1) {
-        reject('Block height discrepancy!');
-      }
+      /* Validate Blockchain before adding anything else */
+      const isChainInValid = await self.validateChain();
+      /* returns true if the are errors */
+      if (isChainInValid) reject(isChainInValid);
+
+      /* Checks to ensure chain.height is 1 less than the chain.length (zero indexing) */
+      if (self.chain.length - self.height !== 1) reject('Block height discrepancy!');
 
       try {
         block.height = ++self.height;
-        if (this.height > 0) {
+        if (self.height > 0) {
           block.previousBlockHash = self.chain[self.height - 1].hash;
         }
         block.time = new Date().getTime().toString().slice(0, -3);
@@ -121,16 +125,17 @@ class Blockchain {
       const messageTime = parseInt(message.split(':')[1]);
       const timeNow = parseInt(new Date().getTime().toString().slice(0, -3));
       if (
-        timeNow - messageTime < 3000000000 &&
+        timeNow - messageTime < 300 &&
         bitcoinMessage.verify(message, address, signature)
       ) {
-        /* Add Owners Address to 'star' */
-        const data = { owner: address, star: star };
-        /* Returns the block if added, if not returns error message */
-        // const isBlock = await this._addBlock(new BlockClass.Block({ data: data }));
-        const isBlock = await this._addBlock(new BlockClass.Block(data));
+        /* Create new block */
+        const newBlock = new BlockClass.Block({ owner: address, star: star });
+
+        /* Returns the block if it's added to the chain, if not returns error message */
+        const isBlockOrError = await self._addBlock(newBlock);
+
         /* If isBlock doesn't have a hash then it's the error message */
-        isBlock.hash ? resolve(isBlock) : reject(isBlock);
+        isBlockOrError.hash ? resolve(isBlockOrError) : reject(isBlockOrError);
       }
       reject('Error: Timed out or not verified.');
     });
@@ -158,12 +163,8 @@ class Blockchain {
   getBlockByHeight(height) {
     let self = this;
     return new Promise((resolve, reject) => {
-      let block = self.chain.filter((p) => p.height === height)[0];
-      if (block) {
-        resolve(block);
-      } else {
-        resolve(null);
-      }
+      const getBlock = self.chain.filter((block) => block.height === height)[0];
+      getBlock ? resolve(getBlock) : reject(false);
     });
   }
 
@@ -192,17 +193,46 @@ class Blockchain {
    * 2. Each Block should check the with the previousBlockHash
    */
   validateChain() {
-    console.log('here again....');
     let self = this;
     let errorLog = [];
     return new Promise(async (resolve, reject) => {
+      /* set error variables */
+      let previousHash = null;
+      let report = {
+        blockHeight: null,
+        valid: null,
+        previousHash: null,
+        currentHash: null,
+      };
+
+      /* Loop through blockchain */
       self.chain.forEach(async (block) => {
+        report.blockHeight = block.height;
+
+        /* Check if not Genesis block, and if the previous hash match's the current hash */
+        if (block.height > 0 && previousHash !== block.hash) {
+          report.valid = false;
+          report.previousHash = 'Previous Hash Discrepancy';
+        }
+
+        /* Call block hash validation method */
         const isValidBlock = await block.validate();
-        !isValidBlock && errorLog.push({ block: block.height, Valid: isValidBlock });
+
+        /* Check to see if call returns valid */
+        if (!isValidBlock) {
+          report.currentHash = 'Current Hash Discrepancy';
+          report.valid = false;
+        }
+
+        /* If the block is invalid, add the report to the errorLog */
+        if (!report.valid) errorLog.push(report);
+
+        /* set previous hash to this hash for next iteration */
+        previousHash = block.hash;
       });
-      errorLog.push({ Complete: true });
-      console.log(errorLog);
-      resolve(errorLog);
+
+      if (errorLog.length > 0) reject(errorLog);
+      resolve(false);
     });
   }
 }
