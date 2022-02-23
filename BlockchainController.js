@@ -15,7 +15,9 @@ class BlockchainController {
     this.submitStar();
     this.getBlockByHash();
     this.getStarsByOwner();
-    this.validateBlockchain();
+    this.blockchainValidation();
+
+    this.invalidateBlockTEST();
   }
 
   // Enpoint to Get a Block by Height (GET Endpoint)
@@ -23,10 +25,14 @@ class BlockchainController {
     this.app.get('/block/height/:height', async (req, res) => {
       if (req.params.height) {
         const height = parseInt(req.params.height);
-        let block = await this.blockchain.getBlockByHeight(height);
-        if (block) {
-          return res.status(200).json(block);
-        } else {
+        try {
+          let block = await this.blockchain.getBlockByHeight(height);
+          if (block) {
+            return res.status(200).json(block);
+          } else {
+            return res.status(404).send('Block Not Found!');
+          }
+        } catch (error) {
           return res.status(404).send('Block Not Found!');
         }
       } else {
@@ -57,23 +63,13 @@ class BlockchainController {
   // Endpoint that allow Submit a Star, yu need first to `requestOwnership` to have the message (POST endpoint)
   submitStar() {
     this.app.post('/submitstar', async (req, res) => {
-      if (
-        req.body.address &&
-        req.body.message &&
-        req.body.signature &&
-        req.body.star
-      ) {
+      if (req.body.address && req.body.message && req.body.signature && req.body.star) {
         const address = req.body.address;
         const message = req.body.message;
         const signature = req.body.signature;
         const star = req.body.star;
         try {
-          let block = await this.blockchain.submitStar(
-            address,
-            message,
-            signature,
-            star
-          );
+          let block = await this.blockchain.submitStar(address, message, signature, star);
           if (block) {
             return res.status(200).json(block);
           } else {
@@ -93,10 +89,14 @@ class BlockchainController {
     this.app.get('/block/hash/:hash', async (req, res) => {
       if (req.params.hash) {
         const hash = req.params.hash;
-        let block = await this.blockchain.getBlockByHash(hash);
-        if (block) {
-          return res.status(200).json(block);
-        } else {
+        try {
+          const block = await this.blockchain.getBlockByHash(hash);
+          if (block) {
+            return res.status(200).json(block);
+          } else {
+            return res.status(404).send('Block Not Found!');
+          }
+        } catch (e) {
           return res.status(404).send('Block Not Found!');
         }
       } else {
@@ -127,17 +127,42 @@ class BlockchainController {
   }
 
   // Endpoint to trigger the execution of validateChain()
-  validateBlockchain() {
+  blockchainValidation() {
     this.app.get('/validateBlockchain', async (req, res) => {
       try {
-        const errorList = await this.blockchain.validateBlockchain();
+        const errorList = await this.blockchain.validateChain();
         if (errorList.length > 0) {
           return res.status(200).json(errorList);
         } else {
           return res.status(200).send('Blockchain has been validated.');
         }
       } catch (error) {
-        return res.status(500).send('An error happend!');
+        return res.status(500).send(error.message);
+      }
+    });
+  }
+
+  /* ========= TESTING ====================================
+  | Endpoint to tamper with the blockchain for development. |
+  | Play around with the block in the tamperTest() function |
+  | in the blockchain class then use this endpoint.         |
+  /* ========= TESTING =================================== */
+  invalidateBlockTEST() {
+    this.app.get('/tamperBlock/:block', async (req, res) => {
+      if (req.params.block) {
+        const block = req.params.block;
+        try {
+          const tamper = await this.blockchain.tamperTest(block);
+          if (tamper) {
+            return res.status(200).send(`Block: ${block} has been altered`);
+          } else {
+            return res.status(404).send(`Block: ${block} not found!`);
+          }
+        } catch (error) {
+          return res.status(500).send(error.message);
+        }
+      } else {
+        return res.status(500).send('Block Not Found! Review the Parameters!');
       }
     });
   }

@@ -35,7 +35,11 @@ class Blockchain {
   async initializeChain() {
     if (this.height === -1) {
       let block = new BlockClass.Block({ data: 'Genesis Block' });
-      await this._addBlock(block);
+      try {
+        await this._addBlock(block);
+      } catch (error) {
+        console.log('Initialization Error!');
+      }
     }
   }
 
@@ -63,25 +67,25 @@ class Blockchain {
   _addBlock(block) {
     let self = this;
     return new Promise(async (resolve, reject) => {
-      /* Validate Blockchain before adding anything else */
-      const isChainInValid = await self.validateChain();
-      /* returns true if the are errors */
-      if (isChainInValid) reject(isChainInValid);
-
-      /* Checks to ensure chain.height is 1 less than the chain.length (zero indexing) */
+      /* CHECKS TO ENSURE chain.height IS 1 LES THAN THE chain.length (ZERO INDEXING) */
       if (self.chain.length - self.height !== 1) reject('Block height discrepancy!');
-
+      /* ASSIGN BLOCK HEIGHT AND INCREMENT */
+      block.height = ++self.height;
+      /* IF NOT GENESIS BLOCK, ASSIGN PREVIOUS HASH */
+      if (self.height > 0) {
+        block.previousBlockHash = self.chain[self.height - 1].hash;
+      }
+      block.time = new Date().getTime().toString().slice(0, -3);
+      block.hash = SHA256(JSON.stringify(block)).toString();
+      /* ADD BLOCK TO CHAIN */
+      self.chain.push(block);
+      /* VALIDATE THE BLOCKCHAIN */
       try {
-        block.height = ++self.height;
-        if (self.height > 0) {
-          block.previousBlockHash = self.chain[self.height - 1].hash;
-        }
-        block.time = new Date().getTime().toString().slice(0, -3);
-        block.hash = SHA256(JSON.stringify(block)).toString();
-        self.chain.push(block);
-        resolve(block);
-      } catch (e) {
-        reject(e.message);
+        const areErrors = await self.validateChain();
+        /* RESOLVE THE NEW BLOCK IF VALID ELSE REJECT THE ERRORS */
+        areErrors.length > 0 ? reject(areErrors) : resolve(block);
+      } catch (ValidationError) {
+        reject(ValidationError);
       }
     });
   }
@@ -96,9 +100,7 @@ class Blockchain {
    */
   requestMessageOwnershipVerification(address) {
     return new Promise((resolve) => {
-      resolve(
-        `${address}:${new Date().getTime().toString().slice(0, -3)}:starRegistry`
-      );
+      resolve(`${address}:${new Date().getTime().toString().slice(0, -3)}:starRegistry`);
     });
   }
 
@@ -124,18 +126,20 @@ class Blockchain {
     return new Promise(async (resolve, reject) => {
       const messageTime = parseInt(message.split(':')[1]);
       const timeNow = parseInt(new Date().getTime().toString().slice(0, -3));
+      /* CHECK 5 MINUTE TIMELOCK */
       if (
         timeNow - messageTime < 300 &&
         bitcoinMessage.verify(message, address, signature)
       ) {
-        /* Create new block */
+        /* CREATE NEW BLOCK */
         const newBlock = new BlockClass.Block({ owner: address, star: star });
-
-        /* Returns the block if it's added to the chain, if not returns error message */
-        const isBlockOrError = await self._addBlock(newBlock);
-
-        /* If isBlock doesn't have a hash then it's the error message */
-        isBlockOrError.hash ? resolve(isBlockOrError) : reject(isBlockOrError);
+        /* RETURNS THE BLOCK IF IT'S ADDED TO THE CHAIN, IF NOT, RETURNS ERROR MESSAGE */
+        try {
+          const addBlock = await self._addBlock(newBlock);
+          resolve(addBlock);
+        } catch (errorLog) {
+          reject(errorLog);
+        }
       }
       reject('Error: Timed out or not verified.');
     });
@@ -195,44 +199,60 @@ class Blockchain {
   validateChain() {
     let self = this;
     let errorLog = [];
-    return new Promise(async (resolve, reject) => {
-      /* set error variables */
-      let previousHash = null;
-      let report = {
-        blockHeight: null,
-        valid: null,
-        previousHash: null,
-        currentHash: null,
-      };
-
-      /* Loop through blockchain */
-      self.chain.forEach(async (block) => {
-        report.blockHeight = block.height;
-
-        /* Check if not Genesis block, and if the previous hash match's the current hash */
-        if (block.height > 0 && previousHash !== block.hash) {
-          report.valid = false;
-          report.previousHash = 'Previous Hash Discrepancy';
+    return new Promise(async (resolve) => {
+      try {
+        /* LOOP THROUGH BLOCKCHAIN */
+        for (const [index, block] of self.chain.entries()) {
+          /* CHECK BLOCK HEIGHTS ARE SUCCESSIVE */
+          if (block.height > 0 && block.height !== self.chain[index - 1].height + 1) {
+            errorLog.push({
+              blockHeight: block.height,
+              critical: `Invalid block heights. Previous block height: ${
+                self.chain[index - 1].height + 1
+              }`,
+            });
+          }
+          /* CHECK PREVIOUS BLOCK HASH */
+          if (
+            block.height > 0 &&
+            block.previousBlockHash !== self.chain[index - 1].hash
+          ) {
+            errorLog.push({
+              blockHeight: block.height,
+              previousHash: 'Previous Hash Discrepancy',
+            });
+          }
+          /* CHECK CURRENT BLOCK HASH */
+          try {
+            await block.validate();
+          } catch (failedPromise) {
+            errorLog.push({
+              blockHeight: block.height,
+              currentHash: 'Current Hash Discrepancy',
+            });
+          }
         }
+        resolve(errorLog);
+      } catch (error) {
+        reject('There was a problem validating the blockchain');
+      }
+    });
+  }
 
-        /* Call block hash validation method */
-        const isValidBlock = await block.validate();
-
-        /* Check to see if call returns valid */
-        if (!isValidBlock) {
-          report.currentHash = 'Current Hash Discrepancy';
-          report.valid = false;
-        }
-
-        /* If the block is invalid, add the report to the errorLog */
-        if (!report.valid) errorLog.push(report);
-
-        /* set previous hash to this hash for next iteration */
-        previousHash = block.hash;
-      });
-
-      if (errorLog.length > 0) reject(errorLog);
-      resolve(false);
+  /* ========= TESTING =================================================
+  | Function to test validation, change block details here and call the |
+  | invalidateBlockTEST() endpoint with a height number to invoke       |
+  | the blockchainValidation() endpoint to test.                        |
+  /* ========= TESTING =============================================== */
+  tamperTest(height) {
+    let self = this;
+    return new Promise((resolve, reject) => {
+      const getBlock = self.chain.filter((block) => block.height === +height)[0];
+      if (!getBlock) reject(false);
+      // getBlock.hash = 'DFdlf90448thgVDDfd9375r32h2hfn';
+      // getBlock.height = 7;
+      // getBlock.body = {};
+      resolve(true);
     });
   }
 }
