@@ -38,9 +38,9 @@ class Block {
     let self = this;
     return new Promise((resolve, reject) => {
       // Save in auxiliary variable the current block hash
-      const currentHash = { ...self, hash: null };
+      const stateWhenHashed = { ...self, hash: null };
       // Recalculate the hash of the Block
-      const validateHash = SHA256(JSON.stringify(currentHash)).toString();
+      const validateHash = SHA256(JSON.stringify(stateWhenHashed)).toString();
       // Comparing if the hashes changed
       if (validateHash === self.hash) {
         // Returning the Block is valid
@@ -62,7 +62,7 @@ class Block {
    */
   getBData() {
     return new Promise((resolve, reject) => {
-      this.height > 0 && resolve(JSON.parse(hex2ascii(this.body)));
+      if (this.height > 0) resolve(JSON.parse(hex2ascii(this.body)));
     });
     // Getting the encoded data saved in the Block
     // Decoding the data to retrieve the JSON representation of the object

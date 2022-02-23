@@ -63,6 +63,10 @@ class Blockchain {
   _addBlock(block) {
     let self = this;
     return new Promise(async (resolve, reject) => {
+      if (self.chain.length - self.height !== 1) {
+        reject('Block height discrepancy!');
+      }
+
       try {
         block.height = ++self.height;
         if (this.height > 0) {
@@ -188,9 +192,18 @@ class Blockchain {
    * 2. Each Block should check the with the previousBlockHash
    */
   validateChain() {
+    console.log('here again....');
     let self = this;
     let errorLog = [];
-    return new Promise(async (resolve, reject) => {});
+    return new Promise(async (resolve, reject) => {
+      self.chain.forEach(async (block) => {
+        const isValidBlock = await block.validate();
+        !isValidBlock && errorLog.push({ block: block.height, Valid: isValidBlock });
+      });
+      errorLog.push({ Complete: true });
+      console.log(errorLog);
+      resolve(errorLog);
+    });
   }
 }
 
