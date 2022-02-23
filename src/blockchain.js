@@ -66,7 +66,7 @@ class Blockchain {
       try {
         block.height = ++self.height;
         if (this.height > 0) {
-          block.previousBlockHash = self.chain[self.height].hash;
+          block.previousBlockHash = self.chain[self.height - 1].hash;
         }
         block.time = new Date().getTime().toString().slice(0, -3);
         block.hash = SHA256(JSON.stringify(block)).toString();
@@ -117,11 +117,14 @@ class Blockchain {
       const messageTime = parseInt(message.split(':')[1]);
       const timeNow = parseInt(new Date().getTime().toString().slice(0, -3));
       if (
-        timeNow - messageTime < 300 &&
+        timeNow - messageTime < 3000000000 &&
         bitcoinMessage.verify(message, address, signature)
       ) {
+        /* Add Owners Address to 'star' */
+        const data = { owner: address, star: star };
         /* Returns the block if added, if not returns error message */
-        const isBlock = await this._addBlock(new BlockClass.Block({ data: star }));
+        // const isBlock = await this._addBlock(new BlockClass.Block({ data: data }));
+        const isBlock = await this._addBlock(new BlockClass.Block(data));
         /* If isBlock doesn't have a hash then it's the error message */
         isBlock.hash ? resolve(isBlock) : reject(isBlock);
       }
@@ -169,7 +172,13 @@ class Blockchain {
   getStarsByWalletAddress(address) {
     let self = this;
     let stars = [];
-    return new Promise((resolve, reject) => {});
+    return new Promise((resolve, reject) => {
+      self.chain.forEach(async (star) => {
+        const body = await star.getBData();
+        if (body && body.owner === address) stars.push(body);
+      });
+      resolve(stars);
+    });
   }
 
   /**
